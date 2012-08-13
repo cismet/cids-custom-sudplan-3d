@@ -13,6 +13,9 @@
             <exec.args>-Djava.library.path=${basedir}/native -Duser.country=US -Duser.language=en -Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8899 -Xms512m -Xmx2048m -XX:MaxPermSize=128m -ea -classpath ${de.cismet.cids.classpath} Sirius.navigator.Navigator ${de.cismet.cids.navigator.workingDir}/config/log4j.debug.properties ${de.cismet.cids.navigator.workingDir}/config/navigator.cfg ${de.cismet.cids.navigator.workingDir} ${de.cismet.cids.navigator.workingDir}/plugins ${de.cismet.cids.navigator.workingDir}/search ${de.cismet.cids.navigator.workingDir}/profiles</exec.args>
             <exec.executable>java</exec.executable>
         </properties>
+        <activatedProfiles>
+            <activatedProfile>cismet-dev-exec</activatedProfile>
+        </activatedProfiles>
     </action>
     <action>
         <actionName>debug</actionName>
@@ -28,6 +31,9 @@
             <jpda.listen>true</jpda.listen>
             <exec.executable>java</exec.executable>
         </properties>
+        <activatedProfiles>
+            <activatedProfile>cismet-dev-exec</activatedProfile>
+        </activatedProfiles>
     </action>
     <action>
         <actionName>profile</actionName>
@@ -41,6 +47,9 @@
             <profiler.action>profile</profiler.action>
             <exec.executable>${profiler.java}</exec.executable>
         </properties>
+        <activatedProfiles>
+            <activatedProfile>cismet-dev-exec</activatedProfile>
+        </activatedProfiles>
     </action>
     <action>
         <actionName>CUSTOM-public-deploy-flexo</actionName>
