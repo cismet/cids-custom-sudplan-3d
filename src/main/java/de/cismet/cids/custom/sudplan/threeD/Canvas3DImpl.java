@@ -13,9 +13,9 @@ import com.dfki.av.sudplan.camera.BoundingVolume;
 import com.dfki.av.sudplan.camera.Camera;
 import com.dfki.av.sudplan.camera.CameraListener;
 import com.dfki.av.sudplan.camera.Vector3D;
-import com.dfki.av.sudplan.vis.LayerInfo;
 import com.dfki.av.sudplan.vis.VisualizationPanel;
-import com.dfki.av.sudplan.vis.WMSHeightUtils;
+import com.dfki.av.sudplan.wms.LayerInfo;
+import com.dfki.av.sudplan.wms.WMSUtils;
 
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Geometry;
@@ -269,12 +269,10 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
                         throw new UnsupportedOperationException("only wms layers are currently supported"); // NOI18N
                     }
 
-                    final List<LayerInfo> infos = WMSHeightUtils.getLayerInfos(new URI(sac.getUrl()));
+                    final List<LayerInfo> infos = WMSUtils.getLayerInfos(new URI(sac.getUrl()));
                     for (final LayerInfo info : infos) {
-                        if (layername.equals(info.getParameter().getStringValue(AVKey.LAYER_NAMES))) {
-                            visPanel.addWMSHeightLayer(info.getWMSCapabilities(),
-                                info.getLayerCapabilities(),
-                                info.getParameter(),
+                        if (layername.equals(info.getParams().getStringValue(AVKey.LAYER_NAMES))) {
+                            visPanel.addWMSHeightLayer(info,
                                 0,
                                 1);
                         }
