@@ -11,6 +11,12 @@ import com.dfki.av.sudplan.vis.VisualizationPanel;
 
 import java.awt.Dimension;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadFactory;
+
+import de.cismet.cids.custom.sudplan.commons.CismetExecutors;
+import de.cismet.cids.custom.sudplan.commons.SudplanConcurrency;
+
 /**
  * DOCUMENT ME!
  *
@@ -22,6 +28,7 @@ public final class Registry3D {
     //~ Instance fields --------------------------------------------------------
 
     private final transient VisualizationPanel visPanel;
+    private final transient ExecutorService executor;
 
     //~ Constructors -----------------------------------------------------------
 
@@ -30,6 +37,9 @@ public final class Registry3D {
      */
     private Registry3D() {
         visPanel = new VisualizationPanel(new Dimension(400, 400));
+
+        final ThreadFactory tf = SudplanConcurrency.createThreadFactory("cismap3D"); // NOI18N
+        executor = CismetExecutors.newFixedThreadPool(5, tf);
     }
 
     //~ Methods ----------------------------------------------------------------
@@ -50,6 +60,15 @@ public final class Registry3D {
      */
     public static Registry3D getInstance() {
         return LazyInitializer.INSTANCE;
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    public ExecutorService get3DExecutor() {
+        return executor;
     }
 
     //~ Inner Classes ----------------------------------------------------------

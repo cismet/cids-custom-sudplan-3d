@@ -7,6 +7,12 @@
 ****************************************************/
 package de.cismet.cids.custom.sudplan.threeD;
 
+import Sirius.navigator.types.treenode.DefaultMetaTreeNode;
+import Sirius.navigator.types.treenode.ObjectTreeNode;
+import Sirius.navigator.ui.ComponentRegistry;
+
+import Sirius.server.middleware.types.MetaObject;
+
 import com.dfki.av.sudplan.camera.AnimatedCamera;
 import com.dfki.av.sudplan.camera.BoundingBox;
 import com.dfki.av.sudplan.camera.BoundingVolume;
@@ -14,8 +20,6 @@ import com.dfki.av.sudplan.camera.Camera;
 import com.dfki.av.sudplan.camera.CameraListener;
 import com.dfki.av.sudplan.camera.Vector3D;
 import com.dfki.av.sudplan.vis.VisualizationPanel;
-import com.dfki.av.sudplan.wms.LayerInfo;
-import com.dfki.av.sudplan.wms.WMSUtils;
 
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Geometry;
@@ -26,7 +30,6 @@ import com.vividsolutions.jts.geom.PrecisionModel;
 import com.vividsolutions.jts.geom.impl.CoordinateArraySequence;
 
 import gov.nasa.worldwind.View;
-import gov.nasa.worldwind.avlist.AVKey;
 import gov.nasa.worldwind.geom.Position;
 import gov.nasa.worldwind.geom.Vec4;
 
@@ -36,17 +39,21 @@ import org.openide.util.WeakListeners;
 import org.openide.util.lookup.ServiceProvider;
 
 import java.awt.datatransfer.DataFlavor;
+import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTargetDragEvent;
 import java.awt.dnd.DropTargetDropEvent;
 import java.awt.dnd.DropTargetEvent;
 
 import java.beans.PropertyChangeEvent;
 
+import java.io.File;
+
 import java.net.URI;
 
 import java.util.List;
 
 import javax.swing.JComponent;
+import javax.swing.JOptionPane;
 import javax.swing.tree.TreePath;
 
 import javax.vecmath.Vector3d;
@@ -58,8 +65,10 @@ import de.cismet.cids.custom.sudplan.cismap3d.CameraChangedSupport;
 import de.cismet.cids.custom.sudplan.cismap3d.Canvas3D;
 import de.cismet.cids.custom.sudplan.cismap3d.DropTarget3D;
 
+import de.cismet.cismap.commons.CrsTransformer;
 import de.cismet.cismap.commons.gui.capabilitywidget.SelectionAndCapabilities;
 import de.cismet.cismap.commons.interaction.CismapBroker;
+import de.cismet.cismap.commons.util.DnDUtils;
 import de.cismet.cismap.commons.wms.capabilities.Layer;
 
 /**
@@ -160,7 +169,7 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
 
     @Override
     public void setBoundingBox(final Geometry geom) {
-        final Coordinate[] coords = SMSUtils.getLlAndUr(geom);
+        final Coordinate[] coords = SMSUtils.getLlAndUr(CrsTransformer.transformToGivenCrs(geom, "EPSG:4326")); // NOI18N
         final BoundingVolume bv = new BoundingBox(coords[0].y, coords[1].y, coords[0].x, coords[1].x);
 
         visPanel.setBoundingVolume(bv);
@@ -210,46 +219,37 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
 
     @Override
     public void dragEnter(final DropTargetDragEvent dtde) {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("drag enter: " + dtde);
-        }
     }
 
     @Override
     public void dragOver(final DropTargetDragEvent dtde) {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("drag over: " + dtde);
-        }
     }
 
     @Override
     public void dropActionChanged(final DropTargetDragEvent dtde) {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("drag action changed: " + dtde);
-        }
     }
 
     @Override
     public void dragExit(final DropTargetEvent dte) {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("drag exit: " + dte);
-        }
     }
 
     @Override
     public void drop(final DropTargetDropEvent dtde) {
         if (LOG.isDebugEnabled()) {
-            LOG.debug("drop: " + dtde);
+            LOG.debug("drop: " + dtde); // NOI18N
         }
 
-        final DataFlavor TREEPATH_FLAVOR = new DataFlavor(
+        final DataFlavor treepathFlavor = new DataFlavor(
                 DataFlavor.javaJVMLocalObjectMimeType,
-                "SelectionAndCapabilities"); // NOI18N
+                "SelectionAndCapabilities");                                                           // NOI18N
+        final DataFlavor nodeFlavor = new DataFlavor(DataFlavor.javaJVMLocalObjectMimeType + ";class=" // NOI18N
+                        + DefaultMetaTreeNode.class.getName(),
+                "a DefaultMetaTreeNode");                                                              // NOI18N
 
-        if (dtde.isDataFlavorSupported(TREEPATH_FLAVOR)) {
-            try {
-                final Object o = dtde.getTransferable().getTransferData(TREEPATH_FLAVOR);
-                dtde.dropComplete(true);
+        try {
+            if (dtde.isDataFlavorSupported(treepathFlavor)) {
+                dtde.acceptDrop(DnDConstants.ACTION_COPY_OR_MOVE);
+                final Object o = dtde.getTransferable().getTransferData(treepathFlavor);
 
                 if (o instanceof SelectionAndCapabilities) {
                     final SelectionAndCapabilities sac = (SelectionAndCapabilities)o;
@@ -262,27 +262,104 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
                     final Object lastpathComponent = selectionPath[0].getLastPathComponent();
 
                     final String layername;
+                    final String layerTitle;
                     if (lastpathComponent instanceof Layer) {
                         final Layer layer = (Layer)lastpathComponent;
                         layername = layer.getName();
+
+                        if (layer.getTitle() == null) {
+                            layerTitle = layername;
+                        } else {
+                            layerTitle = layer.getTitle();
+                        }
                     } else {
                         throw new UnsupportedOperationException("only wms layers are currently supported"); // NOI18N
                     }
 
-                    final List<LayerInfo> infos = WMSUtils.getLayerInfos(new URI(sac.getUrl()));
-                    for (final LayerInfo info : infos) {
-                        if (layername.equals(info.getParams().getStringValue(AVKey.LAYER_NAMES))) {
-                            visPanel.addWMSHeightLayer(info,
-                                0,
-                                1);
-                        }
+                    final Runnable layerAdder = new Runnable() {
+
+                            @Override
+                            public void run() {
+                                try {
+                                    final AddLayerDialogPanel aldp = new AddLayerDialogPanel(layerTitle);
+                                    final int answer = JOptionPane.showConfirmDialog(ComponentRegistry.getRegistry()
+                                                    .getMainWindow(),
+                                            aldp,
+                                            "Add layer",
+                                            JOptionPane.OK_CANCEL_OPTION,
+                                            JOptionPane.QUESTION_MESSAGE);
+                                    if (JOptionPane.OK_OPTION == answer) {
+                                        if (aldp.isTextureLayer()) {
+                                            visPanel.addWMSLayer(new URI(sac.getUrl()), layername, aldp.getOpacity());
+                                        } else {
+                                            visPanel.addWMSHeightLayer(new URI(sac.getUrl()),
+                                                layername,
+                                                aldp.getLayerHeight(),
+                                                aldp.getOpacity());
+                                        }
+                                    }
+                                } catch (final Exception ex) {
+                                    final String message = "cannot create 3D wms layer"; // NOI18N
+                                    LOG.error(message, ex);
+                                }
+                            }
+                        };
+
+                    Registry3D.getInstance().get3DExecutor().execute(layerAdder);
+                    dtde.dropComplete(true);
+                } else {
+                    dtde.dropComplete(false);
+                }
+            } else if (dtde.isDataFlavorSupported(nodeFlavor)) {
+                dtde.acceptDrop(DnDConstants.ACTION_COPY_OR_MOVE);
+                final DefaultMetaTreeNode dmtn = (DefaultMetaTreeNode)dtde.getTransferable()
+                            .getTransferData(nodeFlavor);
+
+                if (dmtn instanceof ObjectTreeNode) {
+                    final ObjectTreeNode otn = (ObjectTreeNode)dmtn;
+                    final MetaObject mo = otn.getMetaObject(true);
+
+                    // TODO: accepted mos
+                    dtde.dropComplete(true);
+                } else {
+                    dtde.dropComplete(false);
+                }
+            } else if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)
+                        || dtde.isDataFlavorSupported(DnDUtils.URI_LIST_FLAVOR)) {
+                dtde.acceptDrop(DnDConstants.ACTION_COPY_OR_MOVE);
+
+                final URI uri;
+                if (dtde.isDataFlavorSupported(DnDUtils.URI_LIST_FLAVOR)) {
+                    // unix drop
+                    final String uriList = (String)dtde.getTransferable().getTransferData(DnDUtils.URI_LIST_FLAVOR);
+                    final String[] uris = uriList.split(System.getProperty("line.separator")); // NOI18N
+                    if (uris.length == 1) {
+                        uri = new URI(uris[0]);
+                        dtde.dropComplete(true);
+                    } else {
+                        uri = null;
+                        dtde.dropComplete(false);
+                    }
+                } else {
+                    // win drop
+                    final List<File> data = (List)dtde.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                    if (data.size() == 1) {
+                        uri = data.get(0).toURI();
+                        dtde.dropComplete(true);
+                    } else {
+                        uri = null;
+                        dtde.dropComplete(false);
                     }
                 }
-            } catch (final Exception ex) {
-                final String message = "cannot create 3D wms layer"; // NOI18N
-                LOG.error(message, ex);
+
+                if (uri != null) {
+                    visPanel.runVisWiz(uri);
+                }
+            } else {
+                dtde.rejectDrop();
             }
-        } else {
+        } catch (final Exception ex) {
+            LOG.error("could not process drop event: " + dtde, ex); // NOI18N
             dtde.rejectDrop();
         }
     }
