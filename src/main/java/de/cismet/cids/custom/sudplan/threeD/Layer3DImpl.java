@@ -57,11 +57,10 @@ public final class Layer3DImpl implements Layer3D, DropTarget3D {
     }
 
     @Override
-    public void addWMSLayer(URI capabilities, String layername, double opacity)
-    {
+    public void addWMSLayer(final URI capabilities, final String layername, final double opacity) {
         visPanel.addWMSLayer(capabilities, layername, opacity);
     }
-    
+
     @Override
     public void removeLayer(final URI uri) {
         visPanel.removeLayer(uri);
