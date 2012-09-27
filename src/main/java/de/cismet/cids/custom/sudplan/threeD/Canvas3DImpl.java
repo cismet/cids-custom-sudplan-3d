@@ -7,10 +7,12 @@
 ****************************************************/
 package de.cismet.cids.custom.sudplan.threeD;
 
+import Sirius.navigator.connection.SessionManager;
 import Sirius.navigator.types.treenode.DefaultMetaTreeNode;
 import Sirius.navigator.types.treenode.ObjectTreeNode;
 import Sirius.navigator.ui.ComponentRegistry;
 
+import Sirius.server.middleware.types.MetaClass;
 import Sirius.server.middleware.types.MetaObject;
 
 import com.dfki.av.sudplan.camera.AnimatedCamera;
@@ -20,6 +22,18 @@ import com.dfki.av.sudplan.camera.Camera;
 import com.dfki.av.sudplan.camera.CameraListener;
 import com.dfki.av.sudplan.camera.Vector3D;
 import com.dfki.av.sudplan.vis.VisualizationPanel;
+import com.dfki.av.sudplan.vis.basic.VisBuildings;
+import com.dfki.av.sudplan.vis.core.ColorParameter;
+import com.dfki.av.sudplan.vis.core.ITransferFunction;
+import com.dfki.av.sudplan.vis.core.IVisAlgorithm;
+import com.dfki.av.sudplan.vis.core.IVisParameter;
+import com.dfki.av.sudplan.vis.core.NumberParameter;
+import com.dfki.av.sudplan.vis.core.VisConfiguration;
+import com.dfki.av.sudplan.vis.core.VisWorker;
+import com.dfki.av.sudplan.vis.functions.ConstantColor;
+import com.dfki.av.sudplan.vis.geocpm.VisGeoCPM;
+import com.dfki.av.sudplan.vis.spi.TransferFunctionFactory;
+import com.dfki.av.sudplan.vis.spi.VisAlgorithmFactory;
 
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Geometry;
@@ -35,9 +49,11 @@ import gov.nasa.worldwind.geom.Vec4;
 
 import org.apache.log4j.Logger;
 
+import org.openide.util.NbBundle;
 import org.openide.util.WeakListeners;
 import org.openide.util.lookup.ServiceProvider;
 
+import java.awt.Color;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTargetDragEvent;
@@ -58,12 +74,19 @@ import javax.swing.tree.TreePath;
 
 import javax.vecmath.Vector3d;
 
+import de.cismet.cids.custom.sudplan.ManagerType;
 import de.cismet.cids.custom.sudplan.SMSUtils;
 import de.cismet.cids.custom.sudplan.cismap3d.CameraChangedEvent;
 import de.cismet.cids.custom.sudplan.cismap3d.CameraChangedListener;
 import de.cismet.cids.custom.sudplan.cismap3d.CameraChangedSupport;
 import de.cismet.cids.custom.sudplan.cismap3d.Canvas3D;
 import de.cismet.cids.custom.sudplan.cismap3d.DropTarget3D;
+import de.cismet.cids.custom.sudplan.geocpmrest.io.SimulationResult;
+import de.cismet.cids.custom.sudplan.local.wupp.RunoffOutputManager;
+
+import de.cismet.cids.dynamics.CidsBean;
+
+import de.cismet.cids.navigator.utils.ClassCacheMultiple;
 
 import de.cismet.cismap.commons.CrsTransformer;
 import de.cismet.cismap.commons.gui.capabilitywidget.SelectionAndCapabilities;
@@ -150,7 +173,7 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
 
     @Override
     public void resetCamera() {
-        throw new UnsupportedOperationException("Not supported yet.");
+        throw new UnsupportedOperationException("Not supported yet."); // NOI18N //NOI18N
     }
 
     @Override
@@ -194,12 +217,12 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
 
     @Override
     public void setInteractionMode(final InteractionMode mode) {
-        throw new UnsupportedOperationException("Not supported yet.");
+        throw new UnsupportedOperationException("Not supported yet."); // NOI18N
     }
 
     @Override
     public InteractionMode getInteractionMode() {
-        throw new UnsupportedOperationException("Not supported yet.");
+        throw new UnsupportedOperationException("Not supported yet."); // NOI18N
     }
 
     @Override
@@ -276,35 +299,7 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
                         throw new UnsupportedOperationException("only wms layers are currently supported"); // NOI18N
                     }
 
-                    final Runnable layerAdder = new Runnable() {
-
-                            @Override
-                            public void run() {
-                                try {
-                                    final AddLayerDialogPanel aldp = new AddLayerDialogPanel(layerTitle);
-                                    final int answer = JOptionPane.showConfirmDialog(ComponentRegistry.getRegistry()
-                                                    .getMainWindow(),
-                                            aldp,
-                                            "Add layer",
-                                            JOptionPane.OK_CANCEL_OPTION,
-                                            JOptionPane.QUESTION_MESSAGE);
-                                    if (JOptionPane.OK_OPTION == answer) {
-                                        if (aldp.isTextureLayer()) {
-                                            visPanel.addWMSLayer(new URI(sac.getUrl()), layername, aldp.getOpacity());
-                                        } else {
-                                            visPanel.addWMSHeightLayer(new URI(sac.getUrl()),
-                                                layername,
-                                                aldp.getLayerHeight(),
-                                                aldp.getOpacity());
-                                        }
-                                    }
-                                } catch (final Exception ex) {
-                                    final String message = "cannot create 3D wms layer"; // NOI18N
-                                    LOG.error(message, ex);
-                                }
-                            }
-                        };
-
+                    final LayerAdder layerAdder = new LayerAdder(new URI(sac.getUrl()), layername, layerTitle);
                     Registry3D.getInstance().get3DExecutor().execute(layerAdder);
                     dtde.dropComplete(true);
                 } else {
@@ -319,8 +314,128 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
                     final ObjectTreeNode otn = (ObjectTreeNode)dmtn;
                     final MetaObject mo = otn.getMetaObject(true);
 
-                    // TODO: accepted mos
+                    final IVisAlgorithm visAlgo;
+                    final String[] dataAttributes;
+                    final URI dataSource;
+
+                    if ("MODELOUTPUT".equals(mo.getMetaClass().getTableName())) {     // NOI18N
+                        final CidsBean moBean = mo.getBean();
+                        final String name = (String)moBean.getProperty("model.name"); // NOI18N
+                        if ((name != null) && name.startsWith("Wuppertal")) {         // NOI18N
+                            final AddGeoCPMDialogPanel geocpmPanel = new AddGeoCPMDialogPanel();
+                            final int answer = JOptionPane.showConfirmDialog(
+                                    ComponentRegistry.getRegistry().getMainWindow(),
+                                    geocpmPanel,
+                                    NbBundle.getMessage(
+                                        Canvas3DImpl.class,
+                                        "Canvas3DImpl.drop(DropTargetDropEvent).addGeoCPMDialog.title"),
+                                    JOptionPane.OK_CANCEL_OPTION,
+                                    JOptionPane.QUESTION_MESSAGE);
+
+                            if (JOptionPane.OK_OPTION == answer) {
+                                if (geocpmPanel.isStatic()) {
+                                    final RunoffOutputManager manager = (RunoffOutputManager)SMSUtils
+                                                .loadManagerFromModel((CidsBean)moBean.getProperty("model"), // NOI18N
+                                                    ManagerType.OUTPUT);
+                                    manager.setCidsBean(moBean);
+                                    final SimulationResult sr = manager.getUR();
+                                    final String capUri = sr.getWmsGetCapabilitiesRequest();
+                                    final String layerName = sr.getLayerName();
+
+                                    final LayerAdder layerAdder = new LayerAdder(new URI(capUri), layerName, layerName);
+                                    Registry3D.getInstance().get3DExecutor().execute(layerAdder);
+                                }
+
+                                if (geocpmPanel.isDynamic()) {
+                                    final MetaClass mc = ClassCacheMultiple.getMetaClass(
+                                            SMSUtils.DOMAIN_SUDPLAN_WUPP,
+                                            "CISMAP3DCONTENT"); // NOI18N
+                                    if (mc == null) {
+                                        dtde.dropComplete(false);
+
+                                        return;
+                                    } else {
+                                        final String query = "SELECT " + mc.getID() + "," + mc.getPrimaryKey() // NOI18N
+                                                    + " FROM "                                                 // NOI18N
+                                                    + mc.getTableName()
+                                                    + " WHERE name LIKE 'GeoCPM 3D result " + mo.getID()       // NOI18N
+                                                    + "'";                                                     // NOI18N
+                                        final MetaObject[] mos = SessionManager.getProxy()
+                                                    .getMetaObjectByQuery(SessionManager.getSession().getUser(),
+                                                        query,
+                                                        SMSUtils.DOMAIN_SUDPLAN_WUPP);
+                                        if ((mos == null) || (mos.length != 1)) {
+                                            dtde.dropComplete(false);
+
+                                            return;
+                                        } else {
+                                            dataSource = new URI((String)
+                                                    mos[0].getAttributeByFieldName("uri")         // NOI18N
+                                                    .getValue());
+                                        }
+                                    }
+                                } else {
+                                    dtde.dropComplete(geocpmPanel.isStatic());
+
+                                    return;
+                                }
+                            } else {
+                                dtde.dropComplete(false);
+
+                                return;
+                            }
+                        } else {
+                            dtde.dropComplete(false);
+
+                            return;
+                        }
+
+                        dataAttributes = new String[] { "<<NO_ATTRIBUTE>>" }; // NOI18N
+                        visAlgo = VisAlgorithmFactory.newInstance(VisGeoCPM.class.getName());
+
+                        final ITransferFunction tf = TransferFunctionFactory.newInstance(
+                                "com.dfki.av.sudplan.vis.geocpm.functions.GeoCPMTrafficLights");               // NOI18N
+                        visAlgo.getVisParameters().get(0).setTransferFunction(tf);
+                    } else if ("CISMAP3DCONTENT".equals(mo.getMetaClass().getTableName())                      // NOI18N
+                                && "buildings".equals(mo.getAttributeByFieldName("layername").getValue())) {   // NOI18N
+                        dataSource = new URI((String)mo.getAttributeByFieldName("uri").getValue());            // NOI18N
+                        dataAttributes = new String[] { "GEB_HOEHE", "<<NO_ATTRIBUTE>>", "<<NO_ATTRIBUTE>>" }; // NOI18N
+                        visAlgo = VisAlgorithmFactory.newInstance(VisBuildings.class.getName());
+                        for (final IVisParameter visParam : visAlgo.getVisParameters()) {
+                            final ITransferFunction tf;
+                            if (visParam instanceof NumberParameter) {
+                                tf = TransferFunctionFactory.newInstance(
+                                        "com.dfki.av.sudplan.vis.functions.IdentityFunction");                 // NOI18N
+                            } else if (visParam instanceof ColorParameter) {
+                                final ConstantColor cc = (ConstantColor)TransferFunctionFactory.newInstance(
+                                        "com.dfki.av.sudplan.vis.functions.ConstantColor");                    // NOI18N
+
+                                if (visParam.getName().equalsIgnoreCase("color of roof")) { // NOI18N
+                                    cc.setColor(Color.DARK_GRAY);
+                                } else {
+                                    cc.setColor(Color.GRAY);
+                                }
+
+                                tf = cc;
+                            } else {
+                                dtde.dropComplete(false);
+
+                                return;
+                            }
+                            visParam.setTransferFunction(tf);
+                        }
+                    } else {
+                        dtde.dropComplete(false);
+
+                        return;
+                    }
+
                     dtde.dropComplete(true);
+
+                    visAlgo.addPropertyChangeListener(visPanel);
+                    final VisConfiguration visConfig = new VisConfiguration(visAlgo, dataSource, dataAttributes);
+                    final VisWorker producer = new VisWorker(visConfig, visPanel.getWwd());
+                    Registry3D.getInstance().get3DExecutor().execute(producer);
                 } else {
                     dtde.dropComplete(false);
                 }
@@ -365,6 +480,63 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
     }
 
     //~ Inner Classes ----------------------------------------------------------
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @version  $Revision$, $Date$
+     */
+    private final class LayerAdder implements Runnable {
+
+        //~ Instance fields ----------------------------------------------------
+
+        private final transient URI capUri;
+        private final transient String layerName;
+        private final transient String layerTitle;
+
+        //~ Constructors -------------------------------------------------------
+
+        /**
+         * Creates a new LayerAdder object.
+         *
+         * @param  capUri      DOCUMENT ME!
+         * @param  layerName   DOCUMENT ME!
+         * @param  layerTitle  DOCUMENT ME!
+         */
+        private LayerAdder(final URI capUri, final String layerName, final String layerTitle) {
+            this.capUri = capUri;
+            this.layerName = layerName;
+            this.layerTitle = layerTitle;
+        }
+
+        //~ Methods ------------------------------------------------------------
+
+        @Override
+        public void run() {
+            try {
+                final AddLayerDialogPanel aldp = new AddLayerDialogPanel(layerTitle);
+                final int answer = JOptionPane.showConfirmDialog(ComponentRegistry.getRegistry().getMainWindow(),
+                        aldp,
+                        NbBundle.getMessage(Canvas3DImpl.class, "Canvas3DImpl.LayerAdder.run().addLayerDialog.title"),
+                        JOptionPane.OK_CANCEL_OPTION,
+                        JOptionPane.QUESTION_MESSAGE);
+                if (JOptionPane.OK_OPTION == answer) {
+                    if (aldp.isTextureLayer()) {
+                        LOG.fatal("[uri=" + capUri + "|layerName=" + layerName + "|opacity=" + aldp.getOpacity() + "]");
+                        visPanel.addWMSLayer(capUri, layerName, aldp.getOpacity());
+                    } else {
+                        visPanel.addWMSHeightLayer(capUri,
+                            layerName,
+                            aldp.getLayerHeight(),
+                            aldp.getOpacity());
+                    }
+                }
+            } catch (final Exception ex) {
+                final String message = "cannot create 3D wms layer"; // NOI18N
+                LOG.error(message, ex);
+            }
+        }
+    }
 
     /**
      * DOCUMENT ME!
