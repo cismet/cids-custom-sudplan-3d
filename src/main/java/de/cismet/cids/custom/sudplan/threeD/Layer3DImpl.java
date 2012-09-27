@@ -48,27 +48,57 @@ public final class Layer3DImpl implements Layer3D, DropTarget3D {
 
     @Override
     public void addLayer(final URI uri) {
-        visPanel.addLayer(uri);
+        Registry3D.getInstance().get3DExecutor().execute(new Runnable() {
+
+                @Override
+                public void run() {
+                    visPanel.addLayer(uri);
+                }
+            });
     }
 
     @Override
     public void addLayer(final URI uri, final ProgressListener progressL) {
-        visPanel.addProgressListener(visPanel);
+        Registry3D.getInstance().get3DExecutor().execute(new Runnable() {
+
+                @Override
+                public void run() {
+                    visPanel.addProgressListener(visPanel);
+                }
+            });
     }
 
     @Override
     public void addWMSLayer(final URI capabilities, final String layername, final double opacity) {
-        visPanel.addWMSLayer(capabilities, layername, opacity);
+        Registry3D.getInstance().get3DExecutor().execute(new Runnable() {
+
+                @Override
+                public void run() {
+                    visPanel.addWMSLayer(capabilities, layername, opacity);
+                }
+            });
     }
 
     @Override
     public void removeLayer(final URI uri) {
-        visPanel.removeLayer(uri);
+        Registry3D.getInstance().get3DExecutor().execute(new Runnable() {
+
+                @Override
+                public void run() {
+                    visPanel.removeLayer(uri);
+                }
+            });
     }
 
     @Override
     public void removeAllLayers() {
-        visPanel.removeAllLayers();
+        Registry3D.getInstance().get3DExecutor().execute(new Runnable() {
+
+                @Override
+                public void run() {
+                    visPanel.removeAllLayers();
+                }
+            });
     }
 
     @Override
