@@ -74,6 +74,7 @@ import javax.swing.tree.TreePath;
 
 import javax.vecmath.Vector3d;
 
+import de.cismet.cids.custom.sudplan.Manager;
 import de.cismet.cids.custom.sudplan.ManagerType;
 import de.cismet.cids.custom.sudplan.SMSUtils;
 import de.cismet.cids.custom.sudplan.cismap3d.CameraChangedEvent;
@@ -82,7 +83,6 @@ import de.cismet.cids.custom.sudplan.cismap3d.CameraChangedSupport;
 import de.cismet.cids.custom.sudplan.cismap3d.Canvas3D;
 import de.cismet.cids.custom.sudplan.cismap3d.DropTarget3D;
 import de.cismet.cids.custom.sudplan.geocpmrest.io.SimulationResult;
-import de.cismet.cids.custom.sudplan.local.wupp.RunoffOutputManager;
 
 import de.cismet.cids.dynamics.CidsBean;
 
@@ -334,16 +334,26 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
 
                             if (JOptionPane.OK_OPTION == answer) {
                                 if (geocpmPanel.isStatic()) {
-                                    final RunoffOutputManager manager = (RunoffOutputManager)SMSUtils
-                                                .loadManagerFromModel((CidsBean)moBean.getProperty("model"), // NOI18N
-                                                    ManagerType.OUTPUT);
+                                    final Manager manager = SMSUtils.loadManagerFromModel((CidsBean)moBean.getProperty(
+                                                "model"), // NOI18N
+                                            ManagerType.OUTPUT);
                                     manager.setCidsBean(moBean);
-                                    final SimulationResult sr = manager.getUR();
-                                    final String capUri = sr.getWmsGetCapabilitiesRequest();
-                                    final String layerName = sr.getLayerName();
+                                    final Object ur = manager.getUR();
+                                    if (ur instanceof SimulationResult) {
+                                        final SimulationResult sr = (SimulationResult)ur;
+                                        String capUri = sr.getWmsGetCapabilitiesRequest();
+                                        if ((capUri != null) && capUri.contains("sudplanwp6.cismet.de")
+                                                    && capUri.contains("GetCapabilities")) {
+                                            capUri =
+                                                "http://localhost/~mscholl/sudplanDist/geocpm_caps_SERVICE=WMS.xml";
+                                        }
+                                        final String layerName = sr.getLayerName();
 
-                                    final LayerAdder layerAdder = new LayerAdder(new URI(capUri), layerName, layerName);
-                                    Registry3D.getInstance().get3DExecutor().execute(layerAdder);
+                                        final LayerAdder layerAdder = new LayerAdder(new URI(capUri),
+                                                layerName,
+                                                layerName);
+                                        Registry3D.getInstance().get3DExecutor().execute(layerAdder);
+                                    }
                                 }
 
                                 if (geocpmPanel.isDynamic()) {
