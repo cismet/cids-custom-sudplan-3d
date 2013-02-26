@@ -45,7 +45,6 @@ import com.vividsolutions.jts.geom.impl.CoordinateArraySequence;
 
 import gov.nasa.worldwind.View;
 import gov.nasa.worldwind.geom.Position;
-import gov.nasa.worldwind.geom.Vec4;
 
 import org.apache.log4j.Logger;
 
@@ -560,7 +559,6 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
         @Override
         public void propertyChange(final PropertyChangeEvent evt) {
             final View newView = (View)evt.getNewValue();
-            final Vec4 newUpVec = newView.getUpVector();
             final Position newPos = newView.getCurrentEyePosition();
             final Coordinate newCoord = new Coordinate(
                     newPos.longitude.degrees,
@@ -570,9 +568,10 @@ public final class Canvas3DImpl implements Canvas3D, DropTarget3D {
             final GeometryFactory factory = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING), 4326);
             final Geometry newGeom = new Point(new CoordinateArraySequence(new Coordinate[] { newCoord }), factory);
 
-            final Vec4 newForwardVec = newView.getForwardVector();
+            // 0 is north, 90 / PI/2 is west, 180 / PI is south, -90 / -PI/2 is east
+            final double radians = newView.getHeading().getRadians();
 
-            final Vector3d newV3d = new Vector3d(newForwardVec.x, newForwardVec.y, newForwardVec.z);
+            final Vector3d newV3d = new Vector3d(-Math.sin(radians), Math.cos(radians), 0);
 
             final CameraChangedEvent cce = new CameraChangedEvent(
                     Canvas3DImpl.this,
