@@ -19,9 +19,10 @@ import java.net.URI;
 
 import javax.swing.JComponent;
 
-import de.cismet.cids.custom.sudplan.ProgressListener;
 import de.cismet.cids.custom.sudplan.cismap3d.DropTarget3D;
 import de.cismet.cids.custom.sudplan.cismap3d.Layer3D;
+
+import de.cismet.commons.utils.ProgressListener;
 
 /**
  * DOCUMENT ME!
